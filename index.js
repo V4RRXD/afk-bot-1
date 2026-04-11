@@ -295,10 +295,10 @@ async function createPanelEmbed() {
   const status = await checkStatus();
   return new EmbedBuilder()
     .setTitle('Spectre AFK Bot Control Panel')
-    .setDescription('Manage your personal AFK bot using the buttons below.\n\nSecure backend system\nAuto reconnect support')
+    .setDescription('Manage your personal AFK bot using the buttons below.\n\n• Secure backend system\n• Auto reconnect support\n\nRole Required to Use Panel.')
     .setColor(status.color)
-    .addFields({ name: 'System Status', value: status.status, inline: true })
-    .setFooter({ text: 'Spectre System' })
+    .addFields({ name: '📊 System Status', value: status.status, inline: true })
+    .setFooter({ text: 'Spectre Panel' })
     .setTimestamp();
 }
 
@@ -324,9 +324,9 @@ discordClient.on('interactionCreate', async (interaction) => {
     case 'start':
       if (!isLoggedIn) {
         createBot();
-        await interaction.editReply('✅ Bot started!');
+        await interaction.editReply('Bot started!');
       } else {
-        await interaction.editReply('⚠️ Bot is already running!');
+        await interaction.editReply('Bot is already running!');
       }
       break;
     case 'stop':
@@ -334,9 +334,9 @@ discordClient.on('interactionCreate', async (interaction) => {
         botInstance.end();
         isLoggedIn = false;
         alreadyLoggedIn = false;
-        await interaction.editReply('✅ Bot stopped!');
+        await interaction.editReply('Bot stopped!');
       } else {
-        await interaction.editReply('⚠️ Bot is not running!');
+        await interaction.editReply('Bot is not running!');
       }
       break;
     case 'restart':
@@ -344,7 +344,7 @@ discordClient.on('interactionCreate', async (interaction) => {
       isLoggedIn = false;
       alreadyLoggedIn = false;
       setTimeout(() => createBot(), 2000);
-      await interaction.editReply('🔄 Restarting bot...');
+      await interaction.editReply('Restarting bot...');
       break;
     case 'status':
       const status = await checkStatus();
@@ -374,9 +374,9 @@ app.post('/stop', (req, res) => {
   alreadyLoggedIn = false;
 });
 
-app.listen(process.env.PORT || 3000, () => console.log('✅ Web server running'));
+app.listen(process.env.PORT || 3000, () => console.log('✅ AFK bot running'));
 
 // ============ START ==========
-console.log('🤖 Starting Spectre AFK Bot (No PVP)...');
+console.log('Starting Spectre AFK Bot...');
 createBot();
 discordClient.login(DISCORD_TOKEN);
