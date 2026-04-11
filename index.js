@@ -3,7 +3,6 @@ const http = require("http");
 const readline = require("readline");
 const mineflayer = require('mineflayer');
 const { pathfinder, Movements, goals } = require('mineflayer-pathfinder');
-const armorManager = require('mineflayer-armor-manager');
 const fs = require('fs');
 const { Client, GatewayIntentBits, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
 
@@ -69,13 +68,15 @@ function resetDelay() {
   reconnectDelay = 5000;
 }
 
-// ============ RANDOM MOVEMENT ============
+// ============ RANDOM MOVEMENT (TANPA PVP) ============
 function startRandomMovements(bot) {
   if (moveInterval) clearInterval(moveInterval);
   moveInterval = setInterval(() => {
     if (!bot || !bot.entity || !isLoggedIn) return;
+    
     const actions = ['walk', 'jump', 'sprint', 'stop'];
     const action = actions[Math.floor(Math.random() * actions.length)];
+    
     switch(action) {
       case 'walk':
         const goal = new goals.GoalNear(
@@ -83,10 +84,12 @@ function startRandomMovements(bot) {
           bot.entity.position.y,
           bot.entity.position.z + (Math.random() - 0.5) * 8, 2);
         bot.pathfinder.setGoal(goal);
+        console.log(`🚶 Walking`);
         break;
       case 'jump':
         bot.setControlState('jump', true);
         setTimeout(() => bot.setControlState('jump', false), 300);
+        console.log(`🦘 Jumping`);
         break;
       case 'sprint':
         bot.setControlState('sprint', true);
@@ -94,11 +97,13 @@ function startRandomMovements(bot) {
           bot.setControlState('sprint', false);
           bot.setControlState('forward', false);
         }, 1500);
+        console.log(`💨 Sprinting`);
         break;
       case 'stop':
         bot.pathfinder.setGoal(null);
         bot.setControlState('forward', false);
         bot.setControlState('back', false);
+        console.log(`🛑 Stopped`);
         break;
     }
   }, 5000 + Math.random() * 8000);
@@ -111,6 +116,7 @@ function startRandomLooking(bot) {
     const randomYaw = Math.random() * Math.PI * 2;
     const randomPitch = (Math.random() - 0.5) * Math.PI / 3;
     bot.look(randomYaw, randomPitch);
+    console.log(`👀 Looking around`);
   }, 8000 + Math.random() * 12000);
 }
 
@@ -120,6 +126,7 @@ function startRandomChat(bot) {
     if (!bot || !bot.entity || !isLoggedIn) return;
     const msg = randomChats[Math.floor(Math.random() * randomChats.length)];
     bot.chat(msg);
+    console.log(`💬 Said: ${msg}`);
   }, 45000 + Math.random() * 45000);
 }
 
@@ -129,25 +136,23 @@ function stopRandomActivities() {
   if (lookInterval) clearInterval(lookInterval);
 }
 
-// ============ AUTO DETECT LOGIN (FORCED - NO FLAGS) ============
+// ============ AUTO DETECT LOGIN ============
 function autoDetectAndLogin(bot, messageText) {
   const msg = messageText.toLowerCase();
   
-  // DETEK LOGIN - LANGSUNG KIRIM, ABAIKAN FLAG APAPUN
   if (msg.includes('please log in') || 
       msg.includes('please login') ||
       (msg.includes('/login') && msg.includes('password'))) {
     
-    console.log('🔍 [AUTO-DETECT] Login prompt detected!');
-    console.log(`🔑 Auto sending /login ${config.password}`);
+    console.log('🔍 [AUTO-DETECT] Login detected!');
+    console.log(`🔑 Sending /login ${config.password}`);
     bot.chat(`/login ${config.password}`);
     return true;
   }
 
-  // DETEK REGISTER
   if (msg.includes('register') && !botState.registered) {
-    console.log('🔍 [AUTO-DETECT] Register prompt detected!');
-    console.log(`🔐 Auto sending /register ${config.password} ${config.password}`);
+    console.log('🔍 [AUTO-DETECT] Register detected!');
+    console.log(`🔐 Sending /register ${config.password} ${config.password}`);
     bot.chat(`/register ${config.password} ${config.password}`);
     botState.registered = true;
     saveState();
@@ -157,7 +162,7 @@ function autoDetectAndLogin(bot, messageText) {
   return false;
 }
 
-// ============ MAIN BOT ============
+// ============ MAIN BOT (NO PVP) ============
 function createBot() {
   if (isReconnecting) return;
   isReconnecting = true;
@@ -172,7 +177,7 @@ function createBot() {
       version: config.version
     });
 
-    bot.loadPlugin(armorManager);
+    // HANYA LOAD PLUGIN YANG DIPERLUKAN (TANPA PVP, TANPA ARMOR MANAGER)
     bot.loadPlugin(pathfinder);
 
     isLoggedIn = false;
@@ -185,10 +190,8 @@ function createBot() {
 
         console.log(`📨 [SERVER] ${msgText}`);
 
-        // AUTO DETECT (PASTI JALAN)
         autoDetectAndLogin(bot, msgText);
 
-        // SUKSES LOGIN
         if (msg.includes('logged in') || msg.includes('welcome') || msg.includes('successfully')) {
           if (!isLoggedIn) {
             console.log('✅ LOGIN SUCCESS! Bot is ready.');
@@ -207,7 +210,6 @@ function createBot() {
           return;
         }
 
-        // BALAS MENTION
         if (alreadyLoggedIn && msg.includes(bot.username.toLowerCase())) {
           const replies = ["yo", "what", "yes", "no", "lol", "ok", "gg", "nice", "bruh"];
           const reply = replies[Math.floor(Math.random() * replies.length)];
@@ -241,23 +243,33 @@ function createBot() {
 
     bot.once('spawn', () => {
       console.log(`✅ Bot spawned at ${bot.entity.position}`);
-      // Backup: kirim login pas spawn juga
       if (!alreadyLoggedIn) {
-        console.log('🔑 Backup login on spawn...');
+        console.log(`🔑 Backup login on spawn...`);
         bot.chat(`/login ${config.password}`);
       }
     });
 
-    // CHAT COMMANDS
+    // CHAT COMMANDS (NO PVP)
     bot.on('chat', (username, message) => {
       if (username === bot.username) return;
       const msg = message.toLowerCase();
+      
       if (msg === 'pos') {
         bot.chat(`X:${Math.floor(bot.entity.position.x)} Y:${Math.floor(bot.entity.position.y)} Z:${Math.floor(bot.entity.position.z)}`);
       } else if (msg === 'stopmove') {
         bot.pathfinder.setGoal(null);
         bot.setControlState('forward', false);
         bot.chat('Stopped moving!');
+      } else if (msg === 'come') {
+        const player = bot.players[username];
+        if (player && player.entity) {
+          bot.chat(`Coming, ${username}!`);
+          try {
+            const mcData = require('minecraft-data')(bot.version);
+            bot.pathfinder.setMovements(new Movements(bot, mcData));
+            bot.pathfinder.setGoal(new goals.GoalFollow(player.entity, 2));
+          } catch(e) {}
+        }
       }
     });
 
@@ -365,6 +377,6 @@ app.post('/stop', (req, res) => {
 app.listen(process.env.PORT || 3000, () => console.log('✅ Web server running'));
 
 // ============ START ==========
-console.log('🤖 Starting Spectre AFK Bot...');
+console.log('🤖 Starting Spectre AFK Bot (No PVP)...');
 createBot();
 discordClient.login(DISCORD_TOKEN);
