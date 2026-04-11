@@ -21,8 +21,8 @@ const rl = readline.createInterface({
 const config = {
   host: 'Spectral-Nova.aternos.me',
   port: 23782,
-  username: 'Floxy',
-  password: 'Rio132025',
+  username: 'Nexy',
+  password: 'Rio132029',
   version: false
 };
 
