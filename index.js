@@ -10,8 +10,7 @@ const { Client, GatewayIntentBits, EmbedBuilder, ActionRowBuilder, ButtonBuilder
 const app = express();
 app.use(express.json());
 
-// ============ DISCORD BOT TOKEN ============
-const DISCORD_TOKEN = process.env.DISCORD_TOKEN; // Simpan di Railway Variables
+const DISCORD_TOKEN = process.env.DISCORD_TOKEN;
 
 // ============ KONFIGURASI ============
 const config = {
@@ -26,24 +25,22 @@ const config = {
 const randomChats = [
   "ok", "lol", "gg", "nice", "bruh", "rip", "fr", "cap", "bet", "lmao",
   "oof", "yikes", "sheesh", "pog", "lol ok", "xd", "wow", "hmm", "ah", "heh",
-  "ok..", "lol..", "nice..", "gg..", "bruh..", "rip..", "period.", ".",
-  "lag", "mb", "afk", "brb", "gtg", "back", "lagging", "mb guys", "g2g",
-  "yo", "sup", "hi", "hello", "wyd", "nm", "same", "frfr", "no cap"
+  "lag", "mb", "afk", "brb", "gtg", "back", "lagging", "yo", "sup", "hi"
 ];
 
-// ============ STATE MANAGEMENT ============
+// ============ STATE ============
 const stateFile = './bot_state.json';
 let botState = { registered: false };
 let botInstance = null;
 let isLoggedIn = false;
 let alreadyLoggedIn = false;
-let loginSent = false;
-let registerSent = false;
-
-// Random movement timers
 let moveInterval = null;
 let chatInterval = null;
 let lookInterval = null;
+let reconnectDelay = 5000;
+let maxDelay = 60000;
+let lastKickTime = 0;
+let isReconnecting = false;
 
 if (fs.existsSync(stateFile)) {
   try {
@@ -51,11 +48,6 @@ if (fs.existsSync(stateFile)) {
     console.log(`📁 Loaded state: registered = ${botState.registered}`);
   } catch(e) {}
 }
-
-let reconnectDelay = 5000;
-let maxDelay = 60000;
-let lastKickTime = 0;
-let isReconnecting = false;
 
 function saveState() {
   fs.writeFileSync(stateFile, JSON.stringify(botState), 'utf8');
@@ -75,19 +67,15 @@ function getDelay() {
 
 function resetDelay() {
   reconnectDelay = 5000;
-  console.log('✅ Delay reset');
 }
 
 // ============ RANDOM MOVEMENT ============
 function startRandomMovements(bot) {
   if (moveInterval) clearInterval(moveInterval);
-
   moveInterval = setInterval(() => {
     if (!bot || !bot.entity || !isLoggedIn) return;
-
     const actions = ['walk', 'jump', 'sprint', 'stop'];
     const action = actions[Math.floor(Math.random() * actions.length)];
-
     switch(action) {
       case 'walk':
         const goal = new goals.GoalNear(
@@ -95,12 +83,10 @@ function startRandomMovements(bot) {
           bot.entity.position.y,
           bot.entity.position.z + (Math.random() - 0.5) * 8, 2);
         bot.pathfinder.setGoal(goal);
-        console.log(`🚶 Walking to random spot`);
         break;
       case 'jump':
         bot.setControlState('jump', true);
         setTimeout(() => bot.setControlState('jump', false), 300);
-        console.log(`🦘 Jumping`);
         break;
       case 'sprint':
         bot.setControlState('sprint', true);
@@ -108,13 +94,11 @@ function startRandomMovements(bot) {
           bot.setControlState('sprint', false);
           bot.setControlState('forward', false);
         }, 1500);
-        console.log(`💨 Sprinting`);
         break;
       case 'stop':
         bot.pathfinder.setGoal(null);
         bot.setControlState('forward', false);
         bot.setControlState('back', false);
-        console.log(`🛑 Stopped moving`);
         break;
     }
   }, 5000 + Math.random() * 8000);
@@ -122,24 +106,20 @@ function startRandomMovements(bot) {
 
 function startRandomLooking(bot) {
   if (lookInterval) clearInterval(lookInterval);
-
   lookInterval = setInterval(() => {
     if (!bot || !bot.entity || !isLoggedIn) return;
     const randomYaw = Math.random() * Math.PI * 2;
     const randomPitch = (Math.random() - 0.5) * Math.PI / 3;
     bot.look(randomYaw, randomPitch);
-    console.log(`👀 Looking around`);
   }, 8000 + Math.random() * 12000);
 }
 
 function startRandomChat(bot) {
   if (chatInterval) clearInterval(chatInterval);
-
   chatInterval = setInterval(() => {
     if (!bot || !bot.entity || !isLoggedIn) return;
     const msg = randomChats[Math.floor(Math.random() * randomChats.length)];
     bot.chat(msg);
-    console.log(`💬 Said: ${msg}`);
   }, 45000 + Math.random() * 45000);
 }
 
@@ -147,32 +127,29 @@ function stopRandomActivities() {
   if (moveInterval) clearInterval(moveInterval);
   if (chatInterval) clearInterval(chatInterval);
   if (lookInterval) clearInterval(lookInterval);
-  moveInterval = null;
-  chatInterval = null;
-  lookInterval = null;
 }
 
-// ============ AUTO DETECT LOGIN PROMPT ============
+// ============ AUTO DETECT LOGIN (FORCED - NO FLAGS) ============
 function autoDetectAndLogin(bot, messageText) {
   const msg = messageText.toLowerCase();
-
-  if (msg.includes('please log in') || msg.includes('please login') ||
+  
+  // DETEK LOGIN - LANGSUNG KIRIM, ABAIKAN FLAG APAPUN
+  if (msg.includes('please log in') || 
+      msg.includes('please login') ||
       (msg.includes('/login') && msg.includes('password'))) {
-    if (!loginSent && !alreadyLoggedIn) {
-      console.log('🔍 [AUTO-DETECT] Login prompt detected!');
-      console.log(`🔑 Auto sending /login ${config.password}`);
-      bot.chat(`/login ${config.password}`);
-      loginSent = true;
-    }
+    
+    console.log('🔍 [AUTO-DETECT] Login prompt detected!');
+    console.log(`🔑 Auto sending /login ${config.password}`);
+    bot.chat(`/login ${config.password}`);
     return true;
   }
 
-  if (msg.includes('register') && !botState.registered && !registerSent) {
+  // DETEK REGISTER
+  if (msg.includes('register') && !botState.registered) {
     console.log('🔍 [AUTO-DETECT] Register prompt detected!');
     console.log(`🔐 Auto sending /register ${config.password} ${config.password}`);
     bot.chat(`/register ${config.password} ${config.password}`);
     botState.registered = true;
-    registerSent = true;
     saveState();
     return true;
   }
@@ -198,13 +175,9 @@ function createBot() {
     bot.loadPlugin(armorManager);
     bot.loadPlugin(pathfinder);
 
-    let registered = botState.registered;
-    let loginAttempts = 0;
     isLoggedIn = false;
-    loginSent = false;
     botInstance = bot;
 
-    // ============ AUTO DETECT & HANDLE MESSAGES ============
     bot.on('message', (message) => {
       try {
         const msgText = message.toString();
@@ -212,14 +185,15 @@ function createBot() {
 
         console.log(`📨 [SERVER] ${msgText}`);
 
+        // AUTO DETECT (PASTI JALAN)
         autoDetectAndLogin(bot, msgText);
 
+        // SUKSES LOGIN
         if (msg.includes('logged in') || msg.includes('welcome') || msg.includes('successfully')) {
-          if (!isLoggedIn && !alreadyLoggedIn) {
+          if (!isLoggedIn) {
             console.log('✅ LOGIN SUCCESS! Bot is ready.');
             isLoggedIn = true;
             alreadyLoggedIn = true;
-            loginSent = true;
             resetDelay();
             isReconnecting = false;
 
@@ -228,34 +202,14 @@ function createBot() {
               startRandomLooking(bot);
               startRandomChat(bot);
               bot.chat('yo');
-              console.log('🎮 Bot started random movements & chat!');
             }, 3000);
           }
           return;
         }
 
-        else if (msg.includes('wrong password') || msg.includes('incorrect password')) {
-          loginAttempts++;
-          console.log(`⚠️ Wrong password, attempt ${loginAttempts}/3`);
-          if (loginAttempts <= 3 && !alreadyLoggedIn) {
-            setTimeout(() => bot.chat(`/login ${config.password}`), 3000);
-          }
-        }
-
-        else if (msg.includes('already logged in')) {
-          console.log('✅ Already logged in');
-          isLoggedIn = true;
-          alreadyLoggedIn = true;
-          resetDelay();
-          isReconnecting = false;
-          startRandomMovements(bot);
-          startRandomLooking(bot);
-          startRandomChat(bot);
-        }
-
-        // Balas mention
+        // BALAS MENTION
         if (alreadyLoggedIn && msg.includes(bot.username.toLowerCase())) {
-          const replies = ["yo", "what", "yes", "no", "lol", "ok", "gg", "nice", "bruh", "fr?", "hmm", "?"];
+          const replies = ["yo", "what", "yes", "no", "lol", "ok", "gg", "nice", "bruh"];
           const reply = replies[Math.floor(Math.random() * replies.length)];
           setTimeout(() => bot.chat(reply), 1000);
         }
@@ -263,62 +217,42 @@ function createBot() {
       } catch(e) {}
     });
 
-    // ============ HANDLE KICK & RECONNECT ============
     bot.on('kicked', (reason) => {
-      const reasonText = typeof reason === 'string' ? reason : JSON.stringify(reason);
-      console.log(`❌ Kicked: ${reasonText}`);
+      console.log(`❌ Kicked: ${JSON.stringify(reason)}`);
       lastKickTime = Date.now();
       isReconnecting = false;
       isLoggedIn = false;
       alreadyLoggedIn = false;
-      loginSent = false;
       stopRandomActivities();
-
       reconnectDelay = Math.min(reconnectDelay * 2, maxDelay);
       setTimeout(() => createBot(), getDelay());
     });
 
-    bot.on('error', (err) => {
-      console.log(`⚠️ Error: ${err.message}`);
-    });
-
+    bot.on('error', (err) => console.log(`⚠️ Error: ${err.message}`));
+    
     bot.on('end', () => {
-      console.log('🔌 Connection ended.');
+      console.log('🔌 Connection ended');
       isReconnecting = false;
       isLoggedIn = false;
       alreadyLoggedIn = false;
-      loginSent = false;
       stopRandomActivities();
       setTimeout(() => createBot(), getDelay());
     });
 
     bot.once('spawn', () => {
       console.log(`✅ Bot spawned at ${bot.entity.position}`);
-      
-      // Kirim login pas spawn (kalo belum)
-      if (!loginSent && !alreadyLoggedIn) {
-        console.log('🔑 Sending login...');
+      // Backup: kirim login pas spawn juga
+      if (!alreadyLoggedIn) {
+        console.log('🔑 Backup login on spawn...');
         bot.chat(`/login ${config.password}`);
-        loginSent = true;
       }
     });
 
-    // ============ CHAT COMMANDS ============
+    // CHAT COMMANDS
     bot.on('chat', (username, message) => {
       if (username === bot.username) return;
       const msg = message.toLowerCase();
-
-      if (msg === 'come') {
-        const player = bot.players[username];
-        if (player && player.entity) {
-          bot.chat(`Coming, ${username}!`);
-          try {
-            const mcData = require('minecraft-data')(bot.version);
-            bot.pathfinder.setMovements(new Movements(bot, mcData));
-            bot.pathfinder.setGoal(new goals.GoalFollow(player.entity, 2));
-          } catch(e) {}
-        }
-      } else if (msg === 'pos') {
+      if (msg === 'pos') {
         bot.chat(`X:${Math.floor(bot.entity.position.x)} Y:${Math.floor(bot.entity.position.y)} Z:${Math.floor(bot.entity.position.z)}`);
       } else if (msg === 'stopmove') {
         bot.pathfinder.setGoal(null);
@@ -330,7 +264,7 @@ function createBot() {
   }, getDelay());
 }
 
-// ============ DISCORD PANEL ============
+// ============ DISCORD PANEL ==========
 const discordClient = new Client({
   intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages, GatewayIntentBits.MessageContent]
 });
@@ -376,7 +310,7 @@ discordClient.on('interactionCreate', async (interaction) => {
 
   switch (interaction.customId) {
     case 'start':
-      if (!isLoggedIn && !alreadyLoggedIn) {
+      if (!isLoggedIn) {
         createBot();
         await interaction.editReply('✅ Bot started!');
       } else {
@@ -384,7 +318,7 @@ discordClient.on('interactionCreate', async (interaction) => {
       }
       break;
     case 'stop':
-      if (botInstance && isLoggedIn) {
+      if (botInstance) {
         botInstance.end();
         isLoggedIn = false;
         alreadyLoggedIn = false;
@@ -418,10 +352,10 @@ discordClient.on('messageCreate', async (message) => {
   }
 });
 
-// ============ WEB SERVER ============
+// ============ WEB SERVER ==========
 app.get('/', (req, res) => res.send('Spectre AFK Bot is running!'));
 app.post('/stop', (req, res) => {
-  console.log('🛑 Stop command received from Discord!');
+  console.log('🛑 Stop command received');
   res.json({ success: true });
   if (botInstance) botInstance.end();
   isLoggedIn = false;
@@ -430,8 +364,7 @@ app.post('/stop', (req, res) => {
 
 app.listen(process.env.PORT || 3000, () => console.log('✅ Web server running'));
 
-// ============ START ============
+// ============ START ==========
 console.log('🤖 Starting Spectre AFK Bot...');
-console.log(`📁 Registered: ${botState.registered ? 'YES' : 'NO'}`);
 createBot();
 discordClient.login(DISCORD_TOKEN);
