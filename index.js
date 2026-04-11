@@ -113,24 +113,24 @@ async function createPanelEmbed() {
   const color = isBotRunning ? 0x00ff00 : 0xff0000;
   
   return new EmbedBuilder()
-    .setTitle('⚙️ Spectre AFK Bot Control Panel')
-    .setDescription('Manage your bot using buttons below.\n\n🔒 **Secure backend system**\n🔄 **Auto reconnect support**')
+    .setTitle('Spectre AFK Bot Control Panel')
+    .setDescription('Manage your personal AFK bot using the buttons below.\n\n**Secure backend system**\n**Auto reconnect support**\n\nRole Required to Use Panel.')
     .setColor(color)
     .addFields(
-      { name: '📊 Bot Status', value: status, inline: true },
+      { name: '📊 System Status', value: status, inline: true },
       { name: '🤖 Username', value: config.username, inline: true },
       { name: '🕐 Last Check', value: `<t:${Math.floor(Date.now()/1000)}:R>`, inline: false }
     )
-    .setFooter({ text: 'Spectre System' });
+    .setFooter({ text: 'Spectre Panel' });
 }
 
 function createButtons() {
   return new ActionRowBuilder()
     .addComponents(
-      new ButtonBuilder().setCustomId('start').setLabel('▶️ Start Bot').setStyle(ButtonStyle.Success),
-      new ButtonBuilder().setCustomId('stop').setLabel('⏹️ Stop Bot').setStyle(ButtonStyle.Danger),
-      new ButtonBuilder().setCustomId('status').setLabel('🔄 Status').setStyle(ButtonStyle.Secondary),
-      new ButtonBuilder().setCustomId('restart').setLabel('🔁 Restart Bot').setStyle(ButtonStyle.Primary)
+      new ButtonBuilder().setCustomId('start').setLabel('Start Bot').setStyle(ButtonStyle.Success),
+      new ButtonBuilder().setCustomId('stop').setLabel('Stop Bot').setStyle(ButtonStyle.Danger),
+      new ButtonBuilder().setCustomId('status').setLabel('Status').setStyle(ButtonStyle.Secondary),
+      new ButtonBuilder().setCustomId('restart').setLabel('Restart Bot').setStyle(ButtonStyle.Primary)
     );
 }
 
@@ -147,18 +147,18 @@ discordClient.on('interactionCreate', async (interaction) => {
     case 'start':
       if (!isBotRunning) {
         startMinecraftBot();
-        await interaction.editReply('✅ Bot started!');
+        await interaction.editReply('Bot started!');
       } else {
-        await interaction.editReply('⚠️ Bot is already running!');
+        await interaction.editReply('Bot is already running!');
       }
       break;
     case 'stop':
       if (bot && isBotRunning) {
         bot.end();
         isBotRunning = false;
-        await interaction.editReply('✅ Bot stopped!');
+        await interaction.editReply('Bot stopped!');
       } else {
-        await interaction.editReply('⚠️ Bot is not running!');
+        await interaction.editReply('Bot is not running!');
       }
       break;
     case 'status':
@@ -167,7 +167,7 @@ discordClient.on('interactionCreate', async (interaction) => {
     case 'restart':
       if (bot) bot.end();
       setTimeout(() => startMinecraftBot(), 2000);
-      await interaction.editReply('🔄 Restarting bot...');
+      await interaction.editReply('Restarting bot...');
       break;
   }
   
