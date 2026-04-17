@@ -3,6 +3,8 @@ const http = require("http");
 const readline = require("readline");
 const mineflayer = require('mineflayer');
 const { pathfinder, Movements, goals } = require('mineflayer-pathfinder');
+const pvp = require('mineflayer-pvp').plugin;
+const armorManager = require('mineflayer-armor-manager');
 const fs = require('fs');
 const { Client, GatewayIntentBits, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
 
@@ -10,6 +12,7 @@ const app = express();
 app.use(express.json());
 
 const DISCORD_TOKEN = process.env.DISCORD_TOKEN;
+const LOG_CHANNEL_ID = '1492542287308259388'; // Ganti dengan ID channel log
 
 // ============ KONFIGURASI ============
 const config = {
@@ -24,7 +27,8 @@ const config = {
 const randomChats = [
   "ok", "lol", "gg", "nice", "bruh", "rip", "fr", "cap", "bet", "lmao",
   "oof", "yikes", "sheesh", "pog", "lol ok", "xd", "wow", "hmm", "ah", "heh",
-  "lag", "mb", "afk", "brb", "gtg", "back", "lagging", "yo", "sup", "hi"
+  "lag", "mb", "afk", "brb", "gtg", "back", "lagging", "yo", "sup", "hi",
+  "grief time", "boom", "haha", "ez", "rekt", "L", "get good", "bye"
 ];
 
 // ============ STATE ============
@@ -36,10 +40,12 @@ let alreadyLoggedIn = false;
 let moveInterval = null;
 let chatInterval = null;
 let lookInterval = null;
+let griefInterval = null;
 let reconnectDelay = 5000;
 let maxDelay = 60000;
 let lastKickTime = 0;
 let isReconnecting = false;
+let botOwnerId = '1449329117022519336'; // Ganti dengan ID lo
 
 if (fs.existsSync(stateFile)) {
   try {
@@ -68,21 +74,63 @@ function resetDelay() {
   reconnectDelay = 5000;
 }
 
-// ============ RANDOM MOVEMENT (TANPA PVP) ============
+// ============ FUNGSI KIRIM LOG KE DISCORD ==========
+async function sendLog(title, fields, color, footer = 'SpectreCore System') {
+  if (!LOG_CHANNEL_ID) return;
+  try {
+    const channel = await discordClient.channels.fetch(LOG_CHANNEL_ID);
+    if (!channel) return;
+    const embed = new EmbedBuilder()
+      .setTitle(title)
+      .setColor(color)
+      .setTimestamp()
+      .setFooter({ text: footer });
+    fields.forEach(field => {
+      embed.addFields({ name: field.name, value: field.value, inline: field.inline || false });
+    });
+    await channel.send({ embeds: [embed] });
+  } catch(e) {}
+}
+
+async function logConnected() {
+  await sendLog('Bot Connected', [
+    { name: 'User', value: `<@${botOwnerId}>`, inline: true },
+    { name: 'Bot', value: config.username, inline: true },
+    { name: 'Server', value: `${config.host}:${config.port}`, inline: false }
+  ], 0x00ff00);
+}
+
+async function logStopped(reason = 'Stopped manually') {
+  await sendLog('Bot Stopped', [
+    { name: 'User', value: `<@${botOwnerId}>`, inline: true },
+    { name: 'Bot', value: config.username, inline: true },
+    { name: 'Reason', value: reason, inline: false }
+  ], 0xffaa00);
+}
+
+async function logKicked(reason) {
+  await sendLog('Bot Kicked', [
+    { name: 'User', value: `<@${botOwnerId}>`, inline: true },
+    { name: 'Bot', value: config.username, inline: true },
+    { name: 'Reason', value: reason, inline: false }
+  ], 0xff0000);
+}
+
+// ============ RANDOM MOVEMENT ==========
 function startRandomMovements(bot) {
   if (moveInterval) clearInterval(moveInterval);
   moveInterval = setInterval(() => {
     if (!bot || !bot.entity || !isLoggedIn) return;
     
-    const actions = ['walk', 'jump', 'sprint', 'stop'];
+    const actions = ['walk', 'jump', 'sprint', 'stop', 'dig', 'attack'];
     const action = actions[Math.floor(Math.random() * actions.length)];
     
     switch(action) {
       case 'walk':
         const goal = new goals.GoalNear(
-          bot.entity.position.x + (Math.random() - 0.5) * 8,
+          bot.entity.position.x + (Math.random() - 0.5) * 15,
           bot.entity.position.y,
-          bot.entity.position.z + (Math.random() - 0.5) * 8, 2);
+          bot.entity.position.z + (Math.random() - 0.5) * 15, 2);
         bot.pathfinder.setGoal(goal);
         console.log(`🚶 Walking`);
         break;
@@ -105,8 +153,55 @@ function startRandomMovements(bot) {
         bot.setControlState('back', false);
         console.log(`🛑 Stopped`);
         break;
+      case 'dig':
+        digRandomBlock(bot);
+        break;
+      case 'attack':
+        attackNearestEntity(bot);
+        break;
     }
-  }, 5000 + Math.random() * 8000);
+  }, 4000 + Math.random() * 6000);
+}
+
+// ============ NGALI / NGANCURIN BLOK ==========
+async function digRandomBlock(bot) {
+  try {
+    const blockTypes = ['dirt', 'grass', 'stone', 'cobblestone', 'sand', 'gravel', 'log', 'wood'];
+    const searchRange = 5;
+    
+    // Cari block terdekat yang bisa dihancurin
+    for (let x = -searchRange; x <= searchRange; x++) {
+      for (let y = -2; y <= 2; y++) {
+        for (let z = -searchRange; z <= searchRange; z++) {
+          const pos = bot.entity.position.offset(x, y, z);
+          const block = bot.blockAt(pos);
+          if (block && blockTypes.some(type => block.name.includes(type))) {
+            console.log(`⛏️ Digging ${block.name} at ${pos.x}, ${pos.y}, ${pos.z}`);
+            await bot.dig(block);
+            await new Promise(r => setTimeout(r, 500));
+            return;
+          }
+        }
+      }
+    }
+    console.log(`⛏️ No diggable blocks found nearby`);
+  } catch(e) {
+    console.log(`⛏️ Dig error: ${e.message}`);
+  }
+}
+
+// ============ NYERANG ENTITY ==========
+function attackNearestEntity(bot) {
+  const entity = bot.nearestEntity();
+  if (entity && entity.type === 'mob') {
+    console.log(`⚔️ Attacking ${entity.name || entity.mobType}`);
+    bot.pvp.attack(entity);
+  } else if (entity && entity.type === 'player' && entity.username !== config.username) {
+    console.log(`⚔️ Attacking player ${entity.username}`);
+    bot.pvp.attack(entity);
+  } else {
+    console.log(`⚔️ No target found`);
+  }
 }
 
 function startRandomLooking(bot) {
@@ -136,14 +231,12 @@ function stopRandomActivities() {
   if (lookInterval) clearInterval(lookInterval);
 }
 
-// ============ AUTO DETECT LOGIN ============
+// ============ AUTO DETECT LOGIN ==========
 function autoDetectAndLogin(bot, messageText) {
   const msg = messageText.toLowerCase();
   
-  if (msg.includes('please log in') || 
-      msg.includes('please login') ||
+  if (msg.includes('please log in') || msg.includes('please login') ||
       (msg.includes('/login') && msg.includes('password'))) {
-    
     console.log('🔍 [AUTO-DETECT] Login detected!');
     console.log(`🔑 Sending /login ${config.password}`);
     bot.chat(`/login ${config.password}`);
@@ -162,7 +255,7 @@ function autoDetectAndLogin(bot, messageText) {
   return false;
 }
 
-// ============ MAIN BOT (NO PVP) ============
+// ============ MAIN BOT ==========
 function createBot() {
   if (isReconnecting) return;
   isReconnecting = true;
@@ -177,7 +270,8 @@ function createBot() {
       version: config.version
     });
 
-    // HANYA LOAD PLUGIN YANG DIPERLUKAN (TANPA PVP, TANPA ARMOR MANAGER)
+    bot.loadPlugin(pvp);
+    bot.loadPlugin(armorManager);
     bot.loadPlugin(pathfinder);
 
     isLoggedIn = false;
@@ -199,6 +293,8 @@ function createBot() {
             alreadyLoggedIn = true;
             resetDelay();
             isReconnecting = false;
+            
+            logConnected();
 
             setTimeout(() => {
               startRandomMovements(bot);
@@ -219,8 +315,10 @@ function createBot() {
       } catch(e) {}
     });
 
-    bot.on('kicked', (reason) => {
-      console.log(`❌ Kicked: ${JSON.stringify(reason)}`);
+    bot.on('kicked', async (reason) => {
+      const reasonText = typeof reason === 'string' ? reason : JSON.stringify(reason);
+      console.log(`❌ Kicked: ${reasonText}`);
+      await logKicked(reasonText);
       lastKickTime = Date.now();
       isReconnecting = false;
       isLoggedIn = false;
@@ -232,8 +330,13 @@ function createBot() {
 
     bot.on('error', (err) => console.log(`⚠️ Error: ${err.message}`));
     
-    bot.on('end', () => {
+    bot.on('end', async () => {
       console.log('🔌 Connection ended');
+      await sendLog('Bot Disconnected', [
+        { name: 'User', value: `<@${botOwnerId}>`, inline: true },
+        { name: 'Bot', value: config.username, inline: true },
+        { name: 'Reason', value: 'Connection lost', inline: false }
+      ], 0xff6666);
       isReconnecting = false;
       isLoggedIn = false;
       alreadyLoggedIn = false;
@@ -249,7 +352,16 @@ function createBot() {
       }
     });
 
-    // CHAT COMMANDS (NO PVP)
+    // ============ PVP EVENT ==========
+    bot.on('playerCollect', (collector, itemDrop) => {
+      if (collector !== bot.entity) return;
+      setTimeout(() => {
+        const sword = bot.inventory.items().find(item => item.name && item.name.includes('sword'));
+        if (sword) bot.equip(sword, 'hand');
+      }, 150);
+    });
+
+    // CHAT COMMANDS
     bot.on('chat', (username, message) => {
       if (username === bot.username) return;
       const msg = message.toLowerCase();
@@ -270,9 +382,18 @@ function createBot() {
             bot.pathfinder.setGoal(new goals.GoalFollow(player.entity, 2));
           } catch(e) {}
         }
+      } else if (msg === 'grief') {
+        bot.chat('Griefing mode activated!');
+        griefInterval = setInterval(() => {
+          if (bot && isLoggedIn) {
+            digRandomBlock(bot);
+          }
+        }, 3000);
+      } else if (msg === 'stopgrief') {
+        if (griefInterval) clearInterval(griefInterval);
+        bot.chat('Griefing mode deactivated!');
       }
     });
-
   }, getDelay());
 }
 
@@ -295,10 +416,10 @@ async function createPanelEmbed() {
   const status = await checkStatus();
   return new EmbedBuilder()
     .setTitle('Spectre AFK Bot Control Panel')
-    .setDescription('Manage your personal AFK bot using the buttons below.\n\n• Secure backend system\n• Auto reconnect support\n\nRole Required to Use Panel.')
+    .setDescription('Manage your personal AFK bot using the buttons below.\n\nSecure backend system\nAuto reconnect support')
     .setColor(status.color)
-    .addFields({ name: '📊 System Status', value: status.status, inline: true })
-    .setFooter({ text: 'Spectre Panel' })
+    .addFields({ name: 'System Status', value: status.status, inline: true })
+    .setFooter({ text: 'Spectre System' })
     .setTimestamp();
 }
 
@@ -324,19 +445,20 @@ discordClient.on('interactionCreate', async (interaction) => {
     case 'start':
       if (!isLoggedIn) {
         createBot();
-        await interaction.editReply('Bot started!');
+        await interaction.editReply('✅ Bot started!');
       } else {
-        await interaction.editReply('Bot is already running!');
+        await interaction.editReply('⚠️ Bot is already running!');
       }
       break;
     case 'stop':
       if (botInstance) {
+        await logStopped('Stopped manually');
         botInstance.end();
         isLoggedIn = false;
         alreadyLoggedIn = false;
-        await interaction.editReply('Bot stopped!');
+        await interaction.editReply('✅ Bot stopped!');
       } else {
-        await interaction.editReply('Bot is not running!');
+        await interaction.editReply('⚠️ Bot is not running!');
       }
       break;
     case 'restart':
@@ -344,7 +466,7 @@ discordClient.on('interactionCreate', async (interaction) => {
       isLoggedIn = false;
       alreadyLoggedIn = false;
       setTimeout(() => createBot(), 2000);
-      await interaction.editReply('Restarting bot...');
+      await interaction.editReply('🔄 Restarting bot...');
       break;
     case 'status':
       const status = await checkStatus();
@@ -366,17 +488,18 @@ discordClient.on('messageCreate', async (message) => {
 
 // ============ WEB SERVER ==========
 app.get('/', (req, res) => res.send('Spectre AFK Bot is running!'));
-app.post('/stop', (req, res) => {
+app.post('/stop', async (req, res) => {
   console.log('🛑 Stop command received');
+  await logStopped('Stopped via API');
   res.json({ success: true });
   if (botInstance) botInstance.end();
   isLoggedIn = false;
   alreadyLoggedIn = false;
 });
 
-app.listen(process.env.PORT || 3000, () => console.log('✅ AFK bot running'));
+app.listen(process.env.PORT || 3000, () => console.log('✅ Web server running'));
 
 // ============ START ==========
-console.log('Starting Spectre AFK Bot...');
+console.log('🤖 Starting Spectre AFK Bot (PVP + Griefing)...');
 createBot();
 discordClient.login(DISCORD_TOKEN);
